@@ -1,0 +1,59 @@
+# sdl2-cairo
+
+Haskell library providing functions to use Cairo to draw on SDL textures and containing a Processing-style convenience drawing API.
+
+##### Install
+
+This library depends on the new [SDL2 bindings](https://github.com/haskell-game/sdl2), available on
+Hackage as [sdl2 version 2.0.0 or greater](http://hackage.haskell.org/package/sdl2)
+and [cairo bindings](https://hackage.haskell.org/package/cairo).
+
+Just clone and install this repository:
+```bash
+git clone git@github.com:apirogov/sdl2-cairo.git
+cd sdl2-cairo
+cabal install
+```
+
+It has been tested with GHC 7.10.1 on a Linux system without any problems.
+
+##### Documentation
+
+Generate the haddock documentation for reference.
+
+You can use Cairo directly with the Render monad on an SDL texture like this:
+
+```haskell
+import SDL.Cairo
+import Graphics.Rendering.Cairo
+...
+  texture <- createCairoTexture renderer (V2 800 600)
+  withCairoTexture texture $ do
+    setSourceRGBA 1 0 0
+    lineTo 800 600
+    stroke
+  
+  copy renderer texture Nothing Nothing
+  present renderer
+```
+
+If you are familiar with Processing, you can also use the simpler Canvas-API:
+
+```haskell
+import SDL.Cairo
+import SDL.Cairo.Canvas
+...
+  texture <- createCairoTexture renderer (V2 800 600)
+  withCanvas texture $ do
+    background $ gray 100
+    stroke $ V4 255 0 0 255
+    fill $ V4 0 0 255 255
+    rect (V2 0 0) (V2 100 100)
+    rect (V2 50 50) (V2 150 150)
+  
+  copy renderer texture Nothing Nothing
+  present renderer
+```
+
+See also the source of Main.hs for more examples.
+  
