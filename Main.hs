@@ -4,10 +4,7 @@ import Control.Monad (unless)
 
 import SDL
 import Linear.V2 (V2(..))
-import Linear.V4 (V4(..))
 import Linear.Affine (Point(..))
-
-import Graphics.Rendering.Cairo (LineJoin(..))
 
 import SDL.Cairo
 import SDL.Cairo.Canvas
@@ -44,6 +41,7 @@ appLoop renderer texture framecount mousepos = do
     drawRndCircle
     drawStars (fromIntegral framecount)
     drawTriangleStrip mousepos'
+    drawBezierTest
 
   -- apply texture and show on screen
   copy renderer texture Nothing Nothing
@@ -56,7 +54,7 @@ appLoop renderer texture framecount mousepos = do
 -- draw a circle in a random color
 drawRndCircle :: Canvas ()
 drawRndCircle = do
-    rnd <- random 0 255
+    rnd <- random (0,255)
     fill $ gray rnd
     circle (V2 700 500) 100
     fill $ gray 255
@@ -66,28 +64,28 @@ drawExample :: Canvas ()
 drawExample = do
     background $ gray 102
 
-    stroke $ V4 0 0 255 255
+    stroke $ blue 255
     point $ V2 500 10
 
     line (V2 0 0) (V2 100 100)
     line (V2 100 0) (V2 0 100)
-    fill $ V4 255 0 0 128
+    fill $ red 255 <@ 128
     noStroke
     rect (V2 200 200) (V2 100 100)
-    stroke $ V4 0 255 0 128
-    fill $ V4 0 0 255 128
+    stroke $ green 255 <@ 128
+    fill $ blue 255 <@ 128
     rect (V2 250 250) (V2 100 100)
     triangle (V2 400 300) (V2 350 400) (V2 400 400)
 
-    strokeWeight 5.0
+    strokeWeight 5
     strokeJoin LineJoinRound
-    stroke $ V4 255 255 0 128
-    fill $ V4 0 255 255 128
+    stroke $ (blue 255 + red 255) <@ 128
+    fill $ rgb 0 255 255 <@ 128
     polygon [V2 500 500,V2 510 505,V2 520 530, V2 500 530]
 
     circle (V2 200 500) 30
 
-    strokeWeight 1.0
+    strokeWeight 1
     ellipse (V2 300 500) (V2 30 50)
 
     pushMatrix
@@ -149,3 +147,21 @@ drawTriangleStrip mousePos = do
   shape ShapeTriangleStrip vertices
   return ()
 
+-- draw bezier curve examples
+drawBezierTest :: Canvas ()
+drawBezierTest = do
+  pushMatrix
+  translate $ V2 600 0
+  stroke $ rgb 255 102 0
+  line (V2 85 20) (V2 10 10)
+  line (V2 90 90) (V2 15 80)
+  stroke $ gray 0
+  bezier (V2 85 20) (V2 10 10) (V2 90 90) (V2 15 80)
+  translate $ V2 100 0
+  stroke $ rgb 255 102 0
+  noFill
+  line (V2 30 20) (V2 80 5)
+  line (V2 80 75) (V2 30 75)
+  stroke $ gray 0
+  bezier (V2 30 20) (V2 80 5) (V2 80 75) (V2 30 75)
+  popMatrix

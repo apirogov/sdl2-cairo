@@ -4,9 +4,10 @@ module SDL.Cairo (
 
 import Foreign.Ptr (castPtr)
 import Foreign.C.Types (CInt)
+
 import Linear.V2 (V2(..))
 import SDL
-import Graphics.Rendering.Cairo
+import Graphics.Rendering.Cairo (Render,Format(..),renderWith,withImageSurfaceForData)
 
 -- |create new texture for Cairo with given size
 createCairoTexture :: Renderer -> V2 CInt -> IO Texture

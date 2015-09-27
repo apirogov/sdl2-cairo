@@ -32,12 +32,13 @@ import Graphics.Rendering.Cairo
     setSourceRGBA 1 0 0
     lineTo 800 600
     stroke
-  
+
   copy renderer texture Nothing Nothing
   present renderer
 ```
 
-If you are familiar with Processing, you can also use the simpler Canvas-API:
+If you are familiar with [Processing](https://processing.org/reference),
+you can also use the simpler Canvas-API:
 
 ```haskell
 import SDL.Cairo
@@ -46,14 +47,16 @@ import SDL.Cairo.Canvas
   texture <- createCairoTexture renderer (V2 800 600)
   withCanvas texture $ do
     background $ gray 100
-    stroke $ V4 255 0 0 255
-    fill $ V4 0 0 255 255
+    stroke $ red 255
+    fill $ blue 255 <@ 128
     rect (V2 0 0) (V2 100 100)
     rect (V2 50 50) (V2 150 150)
-  
+
   copy renderer texture Nothing Nothing
   present renderer
 ```
 
-See also the source of Main.hs for more examples.
-  
+See also the source of Main.hs for more examples. You start that demo with:
+```bash
+cabal run
+```
