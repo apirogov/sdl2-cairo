@@ -18,7 +18,7 @@ trivial to port to the Canvas API.
 -}
 module SDL.Cairo.Canvas (
   -- * Entry point
-  Canvas, withCanvas, getCanvasSize,
+  Canvas, withCanvas, getCanvasSize, renderCairo,
   -- * Transformations
   resetMatrix, pushMatrix, popMatrix, translate, rotate, scale,
   -- * Color and Style
@@ -124,40 +124,40 @@ rgb r g b = V4 r g b 255
 
 -- |set line width for shape borders etc.
 strokeWeight :: Double -> Canvas ()
-strokeWeight d = addAction $ C.setLineWidth d
+strokeWeight d = renderCairo $ C.setLineWidth d
 
 -- |set the style of connections between lines of shapes
 strokeJoin :: C.LineJoin -> Canvas ()
-strokeJoin l = addAction $ C.setLineJoin l
+strokeJoin l = renderCairo $ C.setLineJoin l
 -- |set the style of the line caps
 strokeCap :: C.LineCap -> Canvas ()
-strokeCap l = addAction $ C.setLineCap l
+strokeCap l = renderCairo $ C.setLineCap l
 
 ----
 
 -- |replace current matrix with identity
 resetMatrix :: Canvas ()
-resetMatrix = addAction $ C.identityMatrix
+resetMatrix = renderCairo $ C.identityMatrix
 
 -- |push current matrix onto the stack
 pushMatrix :: Canvas ()
-pushMatrix = addAction $ C.save
+pushMatrix = renderCairo $ C.save
 
 -- |pop a matrix
 popMatrix :: Canvas ()
-popMatrix = addAction $ C.restore
+popMatrix = renderCairo $ C.restore
 
 -- |translate coordinate system
 translate :: V2 Double -> Canvas ()
-translate (V2 x y) = addAction $ C.translate x y
+translate (V2 x y) = renderCairo $ C.translate x y
 
 -- |scale coordinate system
 scale :: V2 Double -> Canvas ()
-scale (V2 x y) = addAction $ C.scale x y
+scale (V2 x y) = renderCairo $ C.scale x y
 
 -- |rotate coordinate system
 rotate :: Double -> Canvas ()
-rotate a = addAction $ C.rotate a
+rotate a = renderCairo $ C.rotate a
 
 ----
 
@@ -165,7 +165,7 @@ rotate a = addAction $ C.rotate a
 background :: Color -> Canvas ()
 background c = do
   (V2 w h) <- gets csSize
-  addAction $ setColor c >> C.rectangle 0 0 w h >> C.fill
+  renderCairo $ setColor c >> C.rectangle 0 0 w h >> C.fill
 
 -- |draw a point with stroke color (cairo emulates this with 1x1 rects!)
 point :: V2 Double -> Canvas ()
@@ -314,9 +314,9 @@ getTime = do
 
 -- helpers --
 
--- |take a render action and append to list
-addAction :: Render () -> Canvas ()
-addAction m = get >>= \cs -> put cs{csActions = csActions cs <> Endo ([m]++)}
+-- | execute a raw Cairo Render action
+renderCairo :: Render () -> Canvas ()
+renderCairo m = get >>= \cs -> put cs{csActions = csActions cs <> Endo ([m]++)}
 
 -- |draw a shape - first fill with bg color, then draw border with stroke color
 drawShape :: Render a -> Canvas ()
@@ -326,7 +326,7 @@ drawShape m = do
 
 -- |if color (csFG/csBG) is set, perform given render block
 ifColor :: (CanvasState -> Maybe Color) -> (Color -> Render ()) -> Canvas ()
-ifColor cf m = get >>= \cs -> forM_ (cf cs) $ \c -> addAction (m c)
+ifColor cf m = get >>= \cs -> forM_ (cf cs) $ \c -> renderCairo (m c)
 
 -- |convert from 256-value RGBA to Double representation, set color
 setColor :: Color -> Render ()
