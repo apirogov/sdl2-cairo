@@ -69,18 +69,18 @@ drawExample = do
 
     line (V2 0 0) (V2 100 100)
     line (V2 100 0) (V2 0 100)
-    fill $ red 255 <@ 128
+    fill $ red 255 !@ 128
     noStroke
     rect (V2 200 200) (V2 100 100)
-    stroke $ green 255 <@ 128
-    fill $ blue 255 <@ 128
+    stroke $ green 255 !@ 128
+    fill $ blue 255 !@ 128
     rect (V2 250 250) (V2 100 100)
     triangle (V2 400 300) (V2 350 400) (V2 400 400)
 
     strokeWeight 5
     strokeJoin LineJoinRound
-    stroke $ (blue 255 + red 255) <@ 128
-    fill $ rgb 0 255 255 <@ 128
+    stroke $ (blue 255 + red 255) !@ 128
+    fill $ rgb 0 255 255 !@ 128
     polygon [V2 500 500,V2 510 505,V2 520 530, V2 500 530]
 
     circle (V2 200 500) 30

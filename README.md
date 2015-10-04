@@ -48,7 +48,7 @@ import SDL.Cairo.Canvas
   withCanvas texture $ do
     background $ gray 100
     stroke $ red 255
-    fill $ blue 255 <@ 128
+    fill $ blue 255 !@ 128
     rect (V2 0 0) (V2 100 100)
     rect (V2 50 50) (V2 150 150)
 

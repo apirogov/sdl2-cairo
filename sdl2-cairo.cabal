@@ -2,7 +2,7 @@
 -- documentation, see http://haskell.org/cabal/users-guide/
 
 name:                sdl2-cairo
-version:             0.1.0.1
+version:             0.1.0.2
 synopsis:            Simple binding to render with cairo on SDL textures,
                      containing also an overlay Processing-style API for
                      convenient drawing.

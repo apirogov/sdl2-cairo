@@ -22,7 +22,7 @@ module SDL.Cairo.Canvas (
   -- * Transformations
   resetMatrix, pushMatrix, popMatrix, translate, rotate, scale,
   -- * Color and Style
-  Color, Byte, gray, red, green, blue, rgb, (<@),
+  Color, Byte, gray, red, green, blue, rgb, (!@),
   stroke, fill, noStroke, noFill, strokeWeight, strokeJoin, strokeCap,
   -- * Primitives
   background, point, line, triangle, rect, rect', polygon, shape, ShapeMode(..),
@@ -119,8 +119,8 @@ blue c = V4 0 0 c 255
 rgb :: Byte -> Byte -> Byte -> Color
 rgb r g b = V4 r g b 255
 -- |set transparency of color (half red would be: @red 255 <\@ 128@)
-(<@) :: Color -> Byte -> Color
-(V4 r g b _) <@ a = V4 r g b a
+(!@) :: Color -> Byte -> Color
+(V4 r g b _) !@ a = V4 r g b a
 
 -- |set line width for shape borders etc.
 strokeWeight :: Double -> Canvas ()
