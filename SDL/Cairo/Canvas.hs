@@ -32,6 +32,8 @@ module SDL.Cairo.Canvas (
   circle, circle', arc, ellipse, bezier, bezierQ,
   -- * Images
   Image(..), createImage, loadImagePNG, saveImagePNG, image, image', blend, grab,
+  -- * Text
+  Font(..), textFont, textSize, text, textC, textR,
   -- * Math
   mapRange, radians, degrees,
   -- * Misc
@@ -66,6 +68,7 @@ data CanvasState = CanvasState{ csSize :: V2 Double, -- ^texture size
                                 csSurface :: C.Surface, -- ^Cairo surface
                                 csFG :: Maybe Color, -- ^stroke color
                                 csBG :: Maybe Color, -- ^fill color
+                                csFont :: Font,      -- ^current font
                                 csActions :: Endo [Render ()], -- ^list of actions to perform
                                 csImages :: [Image] -- ^keeping track of images to free later
                               }
@@ -87,6 +90,7 @@ withCanvas t c = withCairoTexture' t $ \s -> do
                              , csSurface = s
                              , csFG = Just $ gray 0
                              , csBG = Just $ gray 255
+                             , csFont = Font "" 10 False False
                              , csActions = mempty
                              , csImages = []
                              }
@@ -144,7 +148,9 @@ strokeCap l = renderCairo $ C.setLineCap l
 
 ----
 
-data Dim = D Double Double Double Double -- ^ position and size representation
+-- | position and size representation
+data Dim = D Double Double Double Double deriving (Show,Eq)
+
 toD (V2 a b) (V2 c d) = D a b c d -- ^ create dimensions from position and size
 
 -- | takes dimensions with centered position, returns normalized (left corner)
@@ -224,7 +230,7 @@ data ShapeMode = ShapeRegular Bool  -- ^regular path. flag decides whether the f
                | ShapeTriangles -- ^interpret points as triples, draw triangles
                | ShapeTriangleStrip -- ^draw triangle for every neighborhood of 3 points
                | ShapeTriangleFan -- ^fix first point, draw triangles with every neighboring pair and first point
-               deriving (Eq,Show)
+               deriving (Show,Eq)
 
 -- |draw shape along a given path using given @'ShapeMode'@.
 -- (Processing: @beginShape(),vertex(),endShape()@)
@@ -313,7 +319,7 @@ random = liftIO . randomRIO
 
 -- |date and time as returned by getTime
 data Time = Time { year :: Int, month :: Int, day :: Int
-                 , hour :: Int, minute :: Int, second :: Int }
+                 , hour :: Int, minute :: Int, second :: Int } deriving (Show,Eq)
 
 -- |get current system time. Use the 'Time' accessors for specific components.
 -- (Processing: @year(),month(),day(),hour(),minute(),second()@)
@@ -378,7 +384,47 @@ grab dim@(D x y w h) = do
   renderCairo $ copyFromToSurface OperatorSource surf dim s (D 0 0 w h)
   return i
 
--- TODO: fonts/text
+----
+
+-- | Font definition
+data Font = Font{fontFace::String
+                ,fontSize::Double
+                ,fontBold::Bool
+                ,fontItalic::Bool} deriving (Show,Eq)
+
+-- | set current font for text rendering
+textFont :: Font -> Canvas ()
+textFont f = do
+  get >>= \cs -> put cs{csFont=f}
+  renderCairo $ setFont f
+
+-- | get the size of the text when rendered in current font
+textSize :: String -> Canvas (V2 Double)
+textSize s = gets csSurface >>= \cs -> do
+  font <- gets csFont
+  (C.TextExtents _ _ w h _ _) <- C.renderWith cs $ setFont font >> C.textExtents s
+  return $ V2 w h
+
+-- | render text left-aligned (coordinate is top-left corner)
+text :: String -> V2 Double -> Canvas ()
+text str (V2 x y) = ifColor csFG $ \c -> do
+  (C.TextExtents _ yb _ h _ _) <- C.textExtents str
+  setColor c
+  C.moveTo x (y-yb)
+  C.showText str
+
+-- | render text right-aligned (coordinate is top-right corner)
+textR :: String -> V2 Double -> Canvas ()
+textR str (V2 x y) = do
+  (V2 w h) <- textSize str
+  text str $ V2 (x-w) y
+
+-- | render text centered (coordinate is central)
+textC :: String -> V2 Double -> Canvas ()
+textC str (V2 x y) = do
+  (V2 w h) <- textSize str
+  text str $ V2 (x-(w/2)) (y-(h/2))
+
 
 -- helpers --
 
@@ -452,3 +498,12 @@ copyFromToSurface op src sdim@(D sx sy sw sh) dest (D x y w h) = do
     C.restore
   when needsTrim $ C.surfaceFinish s'
   when needsRescale $ C.surfaceFinish s''
+
+-- | Set the current font
+setFont :: Font -> Render ()
+setFont (Font face sz bold italic) = do
+  C.selectFontFace face
+                   (if italic then C.FontSlantItalic else C.FontSlantNormal)
+                   (if bold then C.FontWeightBold else C.FontWeightNormal)
+  C.setFontSize sz
+
