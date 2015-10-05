@@ -2,12 +2,12 @@ module SDL.Cairo (
   createCairoTexture, createCairoTexture', withCairoTexture
 ) where
 
-import Foreign.Ptr (castPtr)
 import Foreign.C.Types (CInt)
-
 import Linear.V2 (V2(..))
-import SDL
-import Graphics.Rendering.Cairo (Render,Format(..),renderWith,withImageSurfaceForData)
+import SDL hiding (Surface)
+
+import SDL.Cairo.Common (withCairoTexture')
+import Graphics.Rendering.Cairo(Render(..),renderWith)
 
 -- |create new texture for Cairo with given size
 createCairoTexture :: Renderer -> V2 CInt -> IO Texture
@@ -22,15 +22,5 @@ createCairoTexture' r w = do
 
 -- |draw on SDL texture with Render monad from Cairo
 withCairoTexture :: Texture -> Render () -> IO ()
-withCairoTexture t m = do
-  (TextureInfo f _ w h) <- queryTexture t
-  case mapFormat f of
-    Nothing -> error "ERROR: Invalid pixel format for cairo use!"
-    Just f' -> do
-      (pixels, pitch) <- lockTexture t Nothing
-      withImageSurfaceForData (castPtr pixels) f'
-            (fromIntegral w) (fromIntegral h) (fromIntegral pitch) $ \s -> renderWith s m
-      unlockTexture t
-  where mapFormat ARGB8888 = Just FormatARGB32
-        mapFormat RGB888 = Just FormatRGB24
-        mapFormat _ = Nothing
+withCairoTexture t m = withCairoTexture' t (\s -> renderWith s m)
+

@@ -4,6 +4,7 @@ import Control.Monad (unless)
 
 import SDL
 import Linear.V2 (V2(..))
+import Linear.V4 (V4(..))
 import Linear.Affine (Point(..))
 
 import SDL.Cairo
@@ -71,10 +72,10 @@ drawExample = do
     line (V2 100 0) (V2 0 100)
     fill $ red 255 !@ 128
     noStroke
-    rect (V2 200 200) (V2 100 100)
+    rect $ D 200 200 100 100
     stroke $ green 255 !@ 128
     fill $ blue 255 !@ 128
-    rect (V2 250 250) (V2 100 100)
+    rect $ D 250 250 100 100
     triangle (V2 400 300) (V2 350 400) (V2 400 400)
 
     strokeWeight 5
@@ -86,14 +87,14 @@ drawExample = do
     circle (V2 200 500) 30
 
     strokeWeight 1
-    ellipse (V2 300 500) (V2 30 50)
+    ellipse $ D 300 500 30 50
 
     pushMatrix
     translate $ V2 600 500
     rotate $ pi/4
-    ellipse (V2 0 0) (V2 100 50)
+    ellipse $ D 0 0 100 50
     popMatrix
-    ellipse (V2 0 0) (V2 100 50)
+    ellipse $ D 0 0 100 50
 
 -- ported star example from Processing home page
 drawStars :: Double -> Canvas ()

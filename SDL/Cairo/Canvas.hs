@@ -1,4 +1,4 @@
-{-# LANGUAGE GeneralizedNewtypeDeriving #-}
+{-# LANGUAGE GeneralizedNewtypeDeriving, FlexibleInstances #-}
 {-|
 Module      : SDL.Cairo.Canvas
 Copyright   : (c) Anton Pirogov 2015
@@ -24,10 +24,14 @@ module SDL.Cairo.Canvas (
   -- * Color and Style
   Color, Byte, gray, red, green, blue, rgb, (!@),
   stroke, fill, noStroke, noFill, strokeWeight, strokeJoin, strokeCap,
+  -- * Coordinates
+  Dim(..), toD, centered, corners,
   -- * Primitives
-  background, point, line, triangle, rect, rect', polygon, shape, ShapeMode(..),
+  background, point, line, triangle, rect, polygon, shape, ShapeMode(..),
   -- * Arcs and Curves
-  arc, arc', circle, circle', ellipse, ellipse', bezier,
+  circle, circle', arc, ellipse, bezier, bezierQ,
+  -- * Images
+  Image(..), createImage, loadImagePNG, saveImagePNG, image, image', blend, grab,
   -- * Math
   mapRange, radians, degrees,
   -- * Misc
@@ -36,8 +40,8 @@ module SDL.Cairo.Canvas (
 ) where
 
 import Data.Monoid
-import Data.Word (Word8)
 import Control.Monad.State
+import Data.Word (Word8)
 
 import Data.Time.Clock (UTCTime(..),getCurrentTime)
 import Data.Time.LocalTime (timeToTimeOfDay,TimeOfDay(..))
@@ -51,17 +55,19 @@ import Linear.Affine (Point(..))
 
 import SDL (Texture,TextureInfo(..),queryTexture)
 import qualified Graphics.Rendering.Cairo as C
-import Graphics.Rendering.Cairo (Render,LineJoin(..),LineCap(..))
+import Graphics.Rendering.Cairo (Render,LineJoin(..),LineCap(..),Format(..),Operator(..))
 
-import SDL.Cairo
+import SDL.Cairo.Common (withCairoTexture')
 
 type Byte = Word8
-type Color = V4 Byte
+type Color = V4 Byte -- ^ RGBA
 
 data CanvasState = CanvasState{ csSize :: V2 Double, -- ^texture size
+                                csSurface :: C.Surface, -- ^Cairo surface
                                 csFG :: Maybe Color, -- ^stroke color
                                 csBG :: Maybe Color, -- ^fill color
-                                csActions :: Endo [Render ()] -- ^list of actions to perform
+                                csActions :: Endo [Render ()], -- ^list of actions to perform
+                                csImages :: [Image] -- ^keeping track of images to free later
                               }
 
 -- |get size of the canvas (Processing: @width(), height()@)
@@ -74,16 +80,19 @@ newtype Canvas a = Canvas { unCanvas :: StateT CanvasState IO a }
 
 -- |draw on a SDL texture using the 'Canvas' monad
 withCanvas :: Texture -> Canvas a -> IO ()
-withCanvas t c = do
+withCanvas t c = withCairoTexture' t $ \s -> do
   (TextureInfo _ _ w h) <- queryTexture t
-  (_, result) <- runStateT (unCanvas (defaults >> c))
+  (_, result) <- runStateT (unCanvas $ defaults >> c)
                   CanvasState{ csSize = V2 (fromIntegral w) (fromIntegral h)
+                             , csSurface = s
                              , csFG = Just $ gray 0
                              , csBG = Just $ gray 255
                              , csActions = mempty
+                             , csImages = []
                              }
   let render = appEndo (csActions result) []
-  withCairoTexture t $ sequence_ render
+  C.renderWith s $ sequence_ render
+  forM_ (csImages result) $ \(Image s _ _) -> C.surfaceFinish s
   where defaults = do
           strokeWeight 1
           strokeCap C.LineCapRound
@@ -118,7 +127,7 @@ blue c = V4 0 0 c 255
 -- |create opaque mixed color
 rgb :: Byte -> Byte -> Byte -> Color
 rgb r g b = V4 r g b 255
--- |set transparency of color (half red would be: @red 255 <\@ 128@)
+-- |set transparency of color (half red would be: @red 255 !\@ 128@)
 (!@) :: Color -> Byte -> Color
 (V4 r g b _) !@ a = V4 r g b a
 
@@ -132,6 +141,16 @@ strokeJoin l = renderCairo $ C.setLineJoin l
 -- |set the style of the line caps
 strokeCap :: C.LineCap -> Canvas ()
 strokeCap l = renderCairo $ C.setLineCap l
+
+----
+
+data Dim = D Double Double Double Double -- ^ position and size representation
+toD (V2 a b) (V2 c d) = D a b c d -- ^ create dimensions from position and size
+
+-- | takes dimensions with centered position, returns normalized (left corner)
+centered (D cx cy w h) = D (cx-w/2) (cy-h/2) w h
+-- | takes dimensions with bottom-right corner instead of size, returns normalized (with size)
+corners (D xl yl xh yh) = D xl yl (xh-xl) (yh-yl)
 
 ----
 
@@ -190,12 +209,9 @@ triangle (V2 x1 y1) (V2 x2 y2) (V2 x3 y3) = drawShape $ do
     C.lineTo x3 y3
     C.lineTo x1 y1
 
--- |draw a rectangle: @rect leftCorner dimensions@
-rect :: V2 Double -> V2 Double -> Canvas ()
-rect (V2 x y) (V2 w h) = drawShape $ C.rectangle x y w h
-
--- |draw a rectangle: @rect' centerPoint dimensions@
-rect' (V2 x y) sz@(V2 w h) = rect (V2 (x-w/2) (y-h/2)) sz
+-- |draw a rectangle
+rect :: Dim -> Canvas ()
+rect (D x y w h) = drawShape $ C.rectangle x y w h
 
 -- |draw a polygon connecting given points (equivalent to @'shape' ('ShapeRegular' True)@)
 polygon :: [V2 Double] -> Canvas ()
@@ -237,40 +253,38 @@ shape ShapeTriangleFan _ = return ()
 
 ----
 
--- |draw arc: @arc leftCorner dimensions startAngle endAngle@
-arc :: V2 Double -> V2 Double -> Double -> Double -> Canvas ()
-arc (V2 x y) sz@(V2 w h) = arc' (V2 (x+w/2) (y+h/2)) sz
-
--- |draw arc: @arc' centerPoint dimensions startAngle endAngle@
-arc' :: V2 Double -> V2 Double -> Double -> Double -> Canvas ()
-arc' (V2 x y) (V2 w h) sa ea = drawShape $ do
+-- |draw arc: @arc dimensions startAngle endAngle@
+arc :: Dim -> Double -> Double -> Canvas ()
+arc (D x y w h) sa ea = drawShape $ do
   C.save
   C.translate x y
   C.scale (w/2) (h/2)
   C.arc 0 0 1 sa ea
   C.restore
 
--- |draw ellipse: @ellipse leftCorner dimensions@
-ellipse :: V2 Double -> V2 Double -> Canvas ()
-ellipse p sz = arc p sz 0 (2*pi)
-
--- |draw ellipse: @ellipse' centerPoint dimensions@
-ellipse' :: V2 Double -> V2 Double -> Canvas ()
-ellipse' p sz = arc' p sz 0 (2*pi)
+-- |draw ellipse
+ellipse :: Dim -> Canvas ()
+ellipse dim = arc dim 0 (2*pi)
 
 -- |draw circle: @circle leftCorner diameter@
 circle :: V2 Double -> Double -> Canvas ()
-circle p d = ellipse p (V2 d d)
+circle (V2 x y) d = ellipse (D x y d d)
 
 -- |draw circle: @circle centerPoint diameter@
 circle' :: V2 Double -> Double -> Canvas ()
-circle' p d = ellipse' p (V2 d d)
+circle' (V2 x y) d = ellipse $ centered (D x y d d)
 
--- |draw bezier spline: @bezier fstAnchor fstControl sndControl sndAnchor@
+-- |draw cubic bezier spline: @bezier fstAnchor fstControl sndControl sndAnchor@
 bezier :: V2 Double -> V2 Double -> V2 Double -> V2 Double -> Canvas ()
 bezier (V2 x1 y1) (V2 x2 y2) (V2 x3 y3) (V2 x4 y4) = drawShape $ do
   C.moveTo x1 y1
   C.curveTo x2 y2 x3 y3 x4 y4
+
+-- |draw quadratic bezier spline: @bezier fstAnchor control sndAnchor@
+bezierQ :: V2 Double -> V2 Double -> V2 Double -> Canvas ()
+bezierQ p0 p12 p3 = bezier p0 p1 p2 p3
+  where p1 = p0 + 2/3*(p12-p0)
+        p2 = p3 + 2/3*(p12-p3)
 
 ----
 
@@ -310,7 +324,61 @@ getTime = do
       (TimeOfDay h mins s) = timeToTimeOfDay time
   return $ Time (fromIntegral y::Int) m d h mins (round s :: Int)
 
--- TODO: fonts/text, image loading
+----
+
+data Image = Image {imageSurface::C.Surface, imageSize::(V2 Int), imageFormat::Format}
+
+-- | create a new empty image of given size
+createImage :: V2 Int -> Canvas Image
+createImage (V2 w h) = do
+  s <- liftIO $ C.createImageSurface FormatARGB32 w h
+  let img = Image s (V2 w h) FormatARGB32
+  track img
+  return img
+
+--TODO: add checks (file exists, correct format, etc.)
+-- | load a PNG image from given path.
+loadImagePNG :: FilePath -> Canvas Image
+loadImagePNG path = do
+  s <- liftIO $ C.imageSurfaceCreateFromPNG path
+  w <- C.imageSurfaceGetWidth s
+  h <- C.imageSurfaceGetHeight s
+  f <- C.imageSurfaceGetFormat s
+  let img = Image s (V2 w h) f
+  track img
+  return img
+
+-- | Save an image as PNG to given file path
+saveImagePNG :: Image -> FilePath -> Canvas ()
+saveImagePNG (Image s _ _) fp = renderCairo $ liftIO (C.surfaceWriteToPNG s fp)
+
+-- | Render complete image on given coordinates
+image :: Image -> V2 Double -> Canvas ()
+image img@(Image _ (V2 w h) _) (V2 x y) =
+  image' img (D x y (fromIntegral w) (fromIntegral h))
+
+-- | Render complete image inside given dimensions
+image' :: Image -> Dim -> Canvas ()
+image' img@(Image s (V2 ow oh) _) =
+  blend OperatorSource img (D 0 0 (fromIntegral ow) (fromIntegral oh))
+
+-- | Copy given part of image to given part of screen, using given blending
+-- operator and resizing when necessary. Use 'OperatorSource' to copy without
+-- blending effects. (Processing: @copy(),blend()@)
+blend :: Operator -> Image -> Dim -> Dim -> Canvas ()
+blend op (Image s (V2 ow oh) _) sdim ddim = do
+  surf <- gets csSurface
+  renderCairo $ copyFromToSurface op s sdim surf ddim
+
+-- | get a copy of the image from current window (Processing: @get()@)
+grab :: Dim -> Canvas Image
+grab dim@(D x y w h) = do
+  surf <- gets csSurface
+  i@(Image s _ _) <- createImage (V2 (round w) (round h))
+  renderCairo $ copyFromToSurface OperatorSource surf dim s (D 0 0 w h)
+  return i
+
+-- TODO: fonts/text
 
 -- helpers --
 
@@ -333,3 +401,54 @@ setColor :: Color -> Render ()
 setColor c@(V4 r g b a) = C.setSourceRGBA (conv r) (conv g) (conv b) (conv a)
   where conv = ((1.0/256)*).fromIntegral
 
+-- | Add to garbage collection list
+track :: Image -> Canvas ()
+track img = get >>= \cs -> put cs{csImages=img:csImages cs}
+
+-- cairo helpers --
+
+-- | helper: returns new surface with scaled content. does NOT cleanup!
+createScaledSurface :: C.Surface -> (V2 Double) -> Render C.Surface
+createScaledSurface s (V2 w h) = do
+  ow <- C.imageSurfaceGetWidth s
+  oh <- C.imageSurfaceGetHeight s
+  s' <- liftIO $ C.createSimilarSurface s C.ContentColorAlpha (round w) (round h)
+  C.renderWith s' $ do
+    C.scale (w/fromIntegral ow) (h/fromIntegral oh)
+    C.setSourceSurface s 0 0
+    pat <- C.getSource
+    C.patternSetExtend pat C.ExtendPad
+    C.setOperator C.OperatorSource
+    C.paint
+  return s'
+
+-- | helper: returns new surface with only part of original content. does NOT cleanup!
+createTrimmedSurface :: C.Surface -> Dim -> Render C.Surface
+createTrimmedSurface s (D x y w h) = do
+  ow <- C.imageSurfaceGetWidth s
+  oh <- C.imageSurfaceGetHeight s
+  s' <- liftIO $ C.createSimilarSurface s C.ContentColorAlpha (round w) (round h)
+  C.renderWith s' $ do
+    C.setSourceSurface s (-x) (-y)
+    C.setOperator C.OperatorSource
+    C.rectangle 0 0 w h
+    C.fill
+  return s'
+
+copyFromToSurface :: Operator -> C.Surface -> Dim -> C.Surface -> Dim -> Render ()
+copyFromToSurface op src sdim@(D sx sy sw sh) dest (D x y w h) = do
+  ow <- C.imageSurfaceGetWidth src
+  oh <- C.imageSurfaceGetHeight src
+  let needsTrim = sx/=0 || sy/=0 || round sw/=oh || round sh/=oh
+      needsRescale = round sw/=round w || round sh/=round h
+  s' <- if needsTrim then createTrimmedSurface src sdim else return src
+  s'' <- if needsRescale then createScaledSurface s' (V2 w h) else return s'
+  C.renderWith dest $ do
+    C.save
+    C.setSourceSurface s'' x y
+    C.setOperator op
+    C.rectangle x y w h
+    C.fill
+    C.restore
+  when needsTrim $ C.surfaceFinish s'
+  when needsRescale $ C.surfaceFinish s''

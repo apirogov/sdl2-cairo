@@ -1,0 +1,2 @@
+:l SDL.Cairo.Canvas.Interactive
+:m SDL.Cairo.Canvas.Interactive SDL.Cairo.Canvas
