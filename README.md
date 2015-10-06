@@ -56,6 +56,19 @@ import SDL.Cairo.Canvas
   present renderer
 ```
 
+Finally, you can of course use this as glue to use [diagrams](http://projects.haskell.org/diagrams/)
+with SDL with the [Cairo backend](https://hackage.haskell.org/package/diagrams-cairo):
+```haskell
+import SDL.Cairo
+import Diagrams.Backend.Cairo
+...
+  let (_,render) = renderDia Cairo (CairoOptions "" (mkSizeSpec $ V2 (Just 800) (Just 600))
+                                                 RenderOnly False)
+                                   (myDiagram :: QDiagram Cairo V2 Double Any)
+  withCairoTexture texture render
+...
+```
+
 See also the source of Main.hs for more examples. You start that demo with:
 ```bash
 cabal run
