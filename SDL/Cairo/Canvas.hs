@@ -1,11 +1,11 @@
-{-# LANGUAGE GeneralizedNewtypeDeriving, FlexibleInstances #-}
+{-# LANGUAGE GeneralizedNewtypeDeriving #-}
 {-|
 Module      : SDL.Cairo.Canvas
-Copyright   : (c) Anton Pirogov 2015
+Copyright   : Copyright (c) 2015 Anton Pirogov
 License     : MIT
 Maintainer  : anton.pirogov@gmail.com
 
-This module defines the Canvas monad, which is a convenience wrapper around
+This module defines the 'Canvas' monad, which is a convenience wrapper around
 the underlying Cairo rendering and can be used with the same textures
 created by 'createCairoTexture'. You can also mix both, if the need arises.
 
@@ -13,14 +13,37 @@ The Canvas API imitates most of the drawing functions
 of the Processing language. See <http://processing.org/reference> for comparison.
 While having the Processing spirit, this module does not aim for a perfect mapping and
 deviates where necessary or appropriate. Nevertheless most Processing examples should be
-trivial to port to the Canvas API.
+trivial to port to the Canvas API. Example:
 
+>import SDL
+>import Linear.V2 (V2(..))
+>import SDL.Cairo
+>import SDL.Cairo.Canvas
+>
+>main :: IO ()
+>main = do
+>  initializeAll
+>  window <- createWindow "SDL2 Cairo Canvas" defaultWindow
+>  renderer <- createRenderer window (-1) defaultRenderer
+>  texture <- createCairoTexture' renderer window
+>
+>  withCanvas texture $ do
+>    background $ gray 102
+>    fill $ red 255 !@ 128
+>    noStroke
+>    rect $ D 200 200 100 100
+>    stroke $ green 255 !@ 128
+>    fill $ blue 255 !@ 128
+>    rect $ D 250 250 100 100
+>    triangle (V2 400 300) (V2 350 400) (V2 400 400)
+>
+>  copy renderer texture Nothing Nothing
+>  present renderer
+>  delay 5000
 -}
 module SDL.Cairo.Canvas (
   -- * Entry point
   Canvas, withCanvas, getCanvasSize, renderCairo,
-  -- * Transformations
-  resetMatrix, pushMatrix, popMatrix, translate, rotate, scale,
   -- * Color and Style
   Color, Byte, gray, red, green, blue, rgb, (!@),
   stroke, fill, noStroke, noFill, strokeWeight, strokeJoin, strokeCap,
@@ -30,8 +53,10 @@ module SDL.Cairo.Canvas (
   background, point, line, triangle, rect, polygon, shape, ShapeMode(..),
   -- * Arcs and Curves
   circle, circle', arc, ellipse, bezier, bezierQ,
+  -- * Transformations
+  resetMatrix, pushMatrix, popMatrix, translate, rotate, scale,
   -- * Images
-  Image(..), createImage, loadImagePNG, saveImagePNG, image, image', blend, grab,
+  Image(imageSize), createImage, loadImagePNG, saveImagePNG, image, image', blend, grab,
   -- * Text
   Font(..), textFont, textSize, text, textC, textR,
   -- * Math
@@ -59,10 +84,12 @@ import SDL (Texture,TextureInfo(..),queryTexture)
 import qualified Graphics.Rendering.Cairo as C
 import Graphics.Rendering.Cairo (Render,LineJoin(..),LineCap(..),Format(..),Operator(..))
 
-import SDL.Cairo.Common (withCairoTexture')
+import SDL.Cairo (withCairoTexture')
 
 type Byte = Word8
-type Color = V4 Byte -- ^ RGBA
+
+-- | RGBA Color is just a byte vector. Colors can be added, subtracted, etc.
+type Color = V4 Byte
 
 data CanvasState = CanvasState{ csSize :: V2 Double, -- ^texture size
                                 csSurface :: C.Surface, -- ^Cairo surface
@@ -82,21 +109,22 @@ newtype Canvas a = Canvas { unCanvas :: StateT CanvasState IO a }
   deriving (Functor, Applicative, Monad, MonadIO, MonadState CanvasState)
 
 -- |draw on a SDL texture using the 'Canvas' monad
-withCanvas :: Texture -> Canvas a -> IO ()
+withCanvas :: Texture -> Canvas a -> IO a
 withCanvas t c = withCairoTexture' t $ \s -> do
   (TextureInfo _ _ w h) <- queryTexture t
-  (_, result) <- runStateT (unCanvas $ defaults >> c)
+  (ret, result) <- runStateT (unCanvas $ defaults >> c)
                   CanvasState{ csSize = V2 (fromIntegral w) (fromIntegral h)
-                             , csSurface = s
-                             , csFG = Just $ gray 0
-                             , csBG = Just $ gray 255
-                             , csFont = Font "" 10 False False
-                             , csActions = mempty
-                             , csImages = []
-                             }
+                            , csSurface = s
+                            , csFG = Just $ gray 0
+                            , csBG = Just $ gray 255
+                            , csFont = Font "" 10 False False
+                            , csActions = mempty
+                            , csImages = []
+                            }
   let render = appEndo (csActions result) []
   C.renderWith s $ sequence_ render
   forM_ (csImages result) $ \(Image s _ _) -> C.surfaceFinish s
+  return ret
   where defaults = do
           strokeWeight 1
           strokeCap C.LineCapRound
@@ -109,10 +137,10 @@ stroke clr = get >>= \cs -> put cs{csFG=Just clr}
 -- |set current fill color
 fill :: Color -> Canvas ()
 fill clr = get >>= \cs -> put cs{csBG=Just clr}
--- |disable stroke (-> shapes without borders!), reenabled by using stroke
+-- |disable stroke (-> shapes without borders!), reenabled by using 'stroke'
 noStroke :: Canvas ()
 noStroke = get >>= \cs -> put cs{csFG=Nothing}
--- |disable fill (-> shapes are not filled!), reenabled by using fill
+-- |disable fill (-> shapes are not filled!), reenabled by using 'fill'
 noFill :: Canvas ()
 noFill = get >>= \cs -> put cs{csBG=Nothing}
 
@@ -148,10 +176,11 @@ strokeCap l = renderCairo $ C.setLineCap l
 
 ----
 
--- | position and size representation
+-- | position and size representation (X Y W H)
 data Dim = D Double Double Double Double deriving (Show,Eq)
 
-toD (V2 a b) (V2 c d) = D a b c d -- ^ create dimensions from position and size
+-- | create dimensions from position and size vector
+toD (V2 a b) (V2 c d) = D a b c d
 
 -- | takes dimensions with centered position, returns normalized (left corner)
 centered (D cx cy w h) = D (cx-w/2) (cy-h/2) w h
