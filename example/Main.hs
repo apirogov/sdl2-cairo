@@ -12,7 +12,7 @@ import SDL.Cairo.Canvas
 
 main :: IO ()
 main = do
-  initializeAll
+  initialize [InitEverything]
   window <- createWindow "SDL2 Cairo Canvas" defaultWindow
   renderer <- createRenderer window (-1) defaultRenderer
 

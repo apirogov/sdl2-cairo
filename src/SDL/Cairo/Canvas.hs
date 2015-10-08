@@ -22,7 +22,7 @@ trivial to port to the Canvas API. Example:
 >
 >main :: IO ()
 >main = do
->  initializeAll
+>  initialize [InitEverything]
 >  window <- createWindow "SDL2 Cairo Canvas" defaultWindow
 >  renderer <- createRenderer window (-1) defaultRenderer
 >  texture <- createCairoTexture' renderer window

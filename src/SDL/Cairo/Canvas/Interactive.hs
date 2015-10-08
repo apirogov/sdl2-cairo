@@ -21,7 +21,7 @@ import SDL.Cairo.Canvas (Canvas, withCanvas)
 -- forks a rendering loop and returns a function to draw in this window.
 getInteractive :: IO (Canvas () -> IO ())
 getInteractive = do
-  initializeAll
+  initialize [InitEverything]
   w <- createWindow "SDL2 Cairo Canvas Interactive" defaultWindow
   r <- createRenderer w (-1) defaultRenderer
   t <- createCairoTexture' r w
