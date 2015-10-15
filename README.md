@@ -1,4 +1,4 @@
-# sdl2-cairo
+# sdl2-cairo [![Hackage version](https://img.shields.io/hackage/v/sdl2-cairo.svg?style=flat)](https://hackage.haskell.org/package/sdl2-cairo) [![Build Status](https://travis-ci.org/apirogov/sdl2-cairo.svg)](https://travis-ci.org/apirogov/sdl2-cairo)
 
 Haskell library providing functions to use Cairo to draw on SDL textures and containing a Processing-style convenience drawing API.
 

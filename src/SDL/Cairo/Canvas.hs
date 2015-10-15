@@ -66,6 +66,7 @@ module SDL.Cairo.Canvas (
   module Graphics.Rendering.Cairo
 ) where
 
+import Control.Applicative
 import Data.Monoid
 import Control.Monad.State
 import Data.Word (Word8)
@@ -292,7 +293,7 @@ shape ShapeTriangleFan _ = return ()
 arc :: Dim -> Double -> Double -> Canvas ()
 arc (D x y w h) sa ea = drawShape $ do
   C.save
-  C.translate x y
+  C.translate (x+(w/2)) (y+(h/2))
   C.scale (w/2) (h/2)
   C.arc 0 0 1 sa ea
   C.restore
@@ -469,7 +470,9 @@ drawShape m = do
 
 -- |if color (csFG/csBG) is set, perform given render block
 ifColor :: (CanvasState -> Maybe Color) -> (Color -> Render ()) -> Canvas ()
-ifColor cf m = get >>= \cs -> forM_ (cf cs) $ \c -> renderCairo (m c)
+ifColor cf m = get >>= \cs -> case cf cs of
+                                Just c -> renderCairo (m c)
+                                Nothing -> return ()
 
 -- |convert from 256-value RGBA to Double representation, set color
 setColor :: Color -> Render ()
