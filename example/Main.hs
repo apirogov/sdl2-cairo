@@ -2,9 +2,8 @@
 module Main where
 import Control.Monad (unless)
 
-import SDL
+import SDL hiding (point, rotate)
 import Linear.V2 (V2(..))
-import Linear.V4 (V4(..))
 import Linear.Affine (Point(..))
 
 import SDL.Cairo
@@ -12,7 +11,7 @@ import SDL.Cairo.Canvas
 
 main :: IO ()
 main = do
-  initialize [InitEverything]
+  initializeAll
   window <- createWindow "SDL2 Cairo Canvas" defaultWindow
   renderer <- createRenderer window (-1) defaultRenderer
 
@@ -99,7 +98,7 @@ drawExample = do
 -- ported star example from Processing home page
 drawStars :: Double -> Canvas ()
 drawStars frameCount = do
-  sz@(V2 w h) <- getCanvasSize
+  (V2 w h) <- getCanvasSize
   stroke $ gray 0
 
   pushMatrix
@@ -133,7 +132,7 @@ star x y r1 r2 n = do
 -- ported triangle strip example from Processing homepage
 drawTriangleStrip :: V2 Double -> Canvas ()
 drawTriangleStrip mousePos = do
-  sz@(V2 w h) <- getCanvasSize
+  (V2 w h) <- getCanvasSize
   let (V2 mouseX mouseY) = mousePos
       pos = V2 (w/2) (h/4*3)
       n = fromIntegral $ round $ mapRange mouseX (0,w) (6,60)
