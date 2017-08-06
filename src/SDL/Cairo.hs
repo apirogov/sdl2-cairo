@@ -26,7 +26,7 @@ createCairoTexture r = createTexture r ARGB8888 TextureAccessStreaming
 createCairoTexture' :: Renderer -> Window -> IO Texture
 createCairoTexture' r w = do
   surf <- getWindowSurface w
-  sz@(V2 w h) <- surfaceDimensions surf
+  sz <- surfaceDimensions surf
   createCairoTexture r sz
 
 -- |draw on SDL texture with Render monad from Cairo

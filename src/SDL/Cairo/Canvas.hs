@@ -1,4 +1,4 @@
-{-# LANGUAGE GeneralizedNewtypeDeriving #-}
+{-# LANGUAGE CPP,GeneralizedNewtypeDeriving #-}
 {-|
 Module      : SDL.Cairo.Canvas
 Copyright   : Copyright (c) 2015 Anton Pirogov
@@ -24,7 +24,7 @@ import SDL.Cairo.Canvas
 
 main :: IO ()
 main = do
-  initialize [InitEverything]
+  initializeAll
   window <- createWindow "SDL2 Cairo Canvas" defaultWindow
   renderer <- createRenderer window (-1) defaultRenderer
   texture <- createCairoTexture' renderer window
@@ -52,7 +52,7 @@ module SDL.Cairo.Canvas (
   Color, Byte, gray, red, green, blue, rgb, (!@),
   stroke, fill, noStroke, noFill, strokeWeight, strokeJoin, strokeCap,
   -- * Coordinates
-  Dim(..), toD, centered, corners,
+  Dim(..), toD, Anchor(..), aligned, centered, corners,
   -- * Primitives
   background, point, line, triangle, rect, polygon, shape, ShapeMode(..),
   -- * Arcs and Curves
@@ -62,7 +62,7 @@ module SDL.Cairo.Canvas (
   -- * Images
   Image(imageSize), createImage, loadImagePNG, saveImagePNG, image, image', blend, grab,
   -- * Text
-  Font(..), textFont, textSize, text, textC, textR,
+  Font(..), textFont, textSize, text, text',
   -- * Math
   mapRange, radians, degrees,
   -- * Misc
@@ -70,7 +70,10 @@ module SDL.Cairo.Canvas (
   module Graphics.Rendering.Cairo
 ) where
 
+#if __GLASGOW_HASKELL__ < 710
 import Control.Applicative
+#endif
+
 import Data.Monoid
 import Control.Monad.State
 import Data.Word (Word8)
@@ -83,7 +86,6 @@ import System.Random (mkStdGen,setStdGen,randomRIO,Random)
 
 import Linear.V2 (V2(..))
 import Linear.V4 (V4(..))
-import Linear.Affine (Point(..))
 
 import SDL (Texture,TextureInfo(..),queryTexture)
 import qualified Graphics.Rendering.Cairo as C
@@ -113,12 +115,16 @@ getCanvasSize = gets csSize
 newtype Canvas a = Canvas { unCanvas :: StateT CanvasState IO a }
   deriving (Functor, Applicative, Monad, MonadIO, MonadState CanvasState)
 
+-- instance Monad Canvas where
+--   f >>= g = undefined
+--     --TODO
+
 -- |draw on a SDL texture using the 'Canvas' monad
 withCanvas :: Texture -> Canvas a -> IO a
 withCanvas t c = withCairoTexture' t $ \s -> do
   (TextureInfo _ _ w h) <- queryTexture t
   (ret, result) <- runStateT (unCanvas $ defaults >> c)
-                  CanvasState{ csSize = V2 (fromIntegral w) (fromIntegral h)
+                 CanvasState{ csSize = V2 (fromIntegral w) (fromIntegral h)
                             , csSurface = s
                             , csFG = Just $ gray 0
                             , csBG = Just $ gray 255
@@ -181,14 +187,32 @@ strokeCap l = renderCairo $ C.setLineCap l
 
 ----
 
--- | position and size representation (X Y W H)
+-- | position (canonically, top-left corner) and size representation (X Y W H)
 data Dim = D Double Double Double Double deriving (Show,Eq)
+
+-- | type indicating where the position coordinate is referring to
+data Anchor = NW | N | NE | E | SE | S | SW | W | Center | Baseline deriving (Show,Eq)
 
 -- | create dimensions from position and size vector
 toD (V2 a b) (V2 c d) = D a b c d
 
+-- | given dimensions with position coordinate not referring to the top-left corner,
+-- normalize to top-left corner coordinate
+aligned :: Anchor -> Dim -> Dim
+aligned NW dim = dim
+aligned NE (D x y w h) = D (x-w) y      w h
+aligned SW (D x y w h) = D x     (y-h)  w h
+aligned SE (D x y w h) = D (x-w) (y-h)  w h
+aligned Baseline dim = aligned SW dim
+aligned N (D x y w h) = D (x-w/2) y       w h
+aligned W (D x y w h) = D x       (y-h/2) w h
+aligned S (D x y w h) = D (x-w/2) (y-h)   w h
+aligned E (D x y w h) = D (x-w)   (y-h/2) w h
+aligned Center (D x y w h) = D (x-w/2) (y-h/2) w h
+
 -- | takes dimensions with centered position, returns normalized (left corner)
-centered (D cx cy w h) = D (cx-w/2) (cy-h/2) w h
+centered = aligned Center
+
 -- | takes dimensions with bottom-right corner instead of size, returns normalized (with size)
 corners (D xl yl xh yh) = D xl yl (xh-xl) (yh-yl)
 
@@ -273,6 +297,7 @@ shape (ShapeRegular closed) ((V2 x y):ps) = drawShape $ do
   C.moveTo x y
   forM_ ps $ \(V2 x' y') -> C.lineTo x' y'
   when closed $ C.closePath
+shape (ShapeRegular _) _ = return ()
 shape ShapePoints ps = forM_ ps point
 shape ShapeLines (p1:p2:ps) = do
   line p1 p2
@@ -366,7 +391,7 @@ getTime = do
 
 ----
 
-data Image = Image {imageSurface::C.Surface, imageSize::(V2 Int), imageFormat::Format}
+data Image = Image {imageSurface::C.Surface, imageSize::V2 Int, imageFormat::Format}
 
 -- | create a new empty image of given size
 createImage :: V2 Int -> Canvas Image
@@ -399,20 +424,20 @@ image img@(Image _ (V2 w h) _) (V2 x y) =
 
 -- | Render complete image inside given dimensions
 image' :: Image -> Dim -> Canvas ()
-image' img@(Image s (V2 ow oh) _) =
+image' img@(Image _ (V2 ow oh) _) =
   blend OperatorSource img (D 0 0 (fromIntegral ow) (fromIntegral oh))
 
 -- | Copy given part of image to given part of screen, using given blending
 -- operator and resizing when necessary. Use 'OperatorSource' to copy without
 -- blending effects. (Processing: @copy(),blend()@)
 blend :: Operator -> Image -> Dim -> Dim -> Canvas ()
-blend op (Image s (V2 ow oh) _) sdim ddim = do
+blend op (Image s _ _) sdim ddim = do
   surf <- gets csSurface
   renderCairo $ copyFromToSurface op s sdim surf ddim
 
 -- | get a copy of the image from current window (Processing: @get()@)
 grab :: Dim -> Canvas Image
-grab dim@(D x y w h) = do
+grab dim@(D _ _ w h) = do
   surf <- gets csSurface
   i@(Image s _ _) <- createImage (V2 (round w) (round h))
   renderCairo $ copyFromToSurface OperatorSource surf dim s (D 0 0 w h)
@@ -441,24 +466,21 @@ textSize s = gets csSurface >>= \cs -> do
 
 -- | render text left-aligned (coordinate is top-left corner)
 text :: String -> V2 Double -> Canvas ()
-text str (V2 x y) = ifColor csFG $ \c -> do
-  (C.TextExtents _ yb _ h _ _) <- C.textExtents str
-  setColor c
+text str (V2 x y) = ifColor csFG $ \_ -> do
+  (C.TextExtents _ yb _ _ _ _) <- C.textExtents str
+  -- setColor c
   C.moveTo x (y-yb)
   C.showText str
 
--- | render text right-aligned (coordinate is top-right corner)
-textR :: String -> V2 Double -> Canvas ()
-textR str (V2 x y) = do
-  (V2 w h) <- textSize str
-  text str $ V2 (x-w) y
-
--- | render text centered (coordinate is central)
-textC :: String -> V2 Double -> Canvas ()
-textC str (V2 x y) = do
-  (V2 w h) <- textSize str
-  text str $ V2 (x-(w/2)) (y-(h/2))
-
+-- | render text with specified alignment. returns x and y advancement
+text' :: String -> Anchor -> V2 Double -> Canvas () --(V2 Double)
+text' str a pos = ifColor csFG $ \_ -> do
+  (C.TextExtents xb yb w h xa ya) <- C.textExtents str
+  let (D x' y' _ _) = aligned a $ toD pos $ V2 w h
+  -- setColor c
+  C.moveTo x' y'
+  C.showText str
+  -- return $ V2 xa ya
 
 -- helpers --
 
@@ -480,7 +502,7 @@ ifColor cf m = get >>= \cs -> case cf cs of
 
 -- |convert from 256-value RGBA to Double representation, set color
 setColor :: Color -> Render ()
-setColor c@(V4 r g b a) = C.setSourceRGBA (conv r) (conv g) (conv b) (conv a)
+setColor (V4 r g b a) = C.setSourceRGBA (conv r) (conv g) (conv b) (conv a)
   where conv = ((1.0/256)*).fromIntegral
 
 -- | Add to garbage collection list
@@ -507,8 +529,6 @@ createScaledSurface s (V2 w h) = do
 -- | helper: returns new surface with only part of original content. does NOT cleanup!
 createTrimmedSurface :: C.Surface -> Dim -> Render C.Surface
 createTrimmedSurface s (D x y w h) = do
-  ow <- C.imageSurfaceGetWidth s
-  oh <- C.imageSurfaceGetHeight s
   s' <- liftIO $ C.createSimilarSurface s C.ContentColorAlpha (round w) (round h)
   C.renderWith s' $ do
     C.setSourceSurface s (-x) (-y)
@@ -521,7 +541,7 @@ copyFromToSurface :: Operator -> C.Surface -> Dim -> C.Surface -> Dim -> Render 
 copyFromToSurface op src sdim@(D sx sy sw sh) dest (D x y w h) = do
   ow <- C.imageSurfaceGetWidth src
   oh <- C.imageSurfaceGetHeight src
-  let needsTrim = sx/=0 || sy/=0 || round sw/=oh || round sh/=oh
+  let needsTrim = sx/=0 || sy/=0 || round sw/=ow || round sh/=oh
       needsRescale = round sw/=round w || round sh/=round h
   s' <- if needsTrim then createTrimmedSurface src sdim else return src
   s'' <- if needsRescale then createScaledSurface s' (V2 w h) else return s'
@@ -542,4 +562,3 @@ setFont (Font face sz bold italic) = do
                    (if italic then C.FontSlantItalic else C.FontSlantNormal)
                    (if bold then C.FontWeightBold else C.FontWeightNormal)
   C.setFontSize sz
-

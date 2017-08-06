@@ -15,7 +15,7 @@ import Control.Concurrent (forkIO)
 import SDL
 
 import SDL.Cairo (createCairoTexture')
-import SDL.Cairo.Canvas (Canvas, withCanvas)
+import SDL.Cairo.Canvas (Canvas, withCanvas, background, gray)
 
 -- |for testing and debugging usage with ghci. Starts up an SDL window,
 -- forks a rendering loop and returns a function to draw in this window.
@@ -25,11 +25,10 @@ getInteractive = do
   w <- createWindow "SDL2 Cairo Canvas Interactive" defaultWindow
   r <- createRenderer w (-1) defaultRenderer
   t <- createCairoTexture' r w
+  withCanvas t $ background $ gray 255
   forkIO $ forever $ do
     lockTexture t Nothing
     copy r t Nothing Nothing
     unlockTexture t
     present r
-  return $ draw t
-  where draw :: Texture -> Canvas () -> IO ()
-        draw = withCanvas
+  return $ withCanvas t

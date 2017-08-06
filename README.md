@@ -5,7 +5,7 @@ Haskell library providing functions to use Cairo to draw on SDL textures and con
 ##### Install
 
 This library depends on the new [SDL2 bindings](https://github.com/haskell-game/sdl2), available on
-Hackage as [sdl2 version 2.0.0 or greater](http://hackage.haskell.org/package/sdl2)
+Hackage as [sdl2 version 2.1.0 or greater](http://hackage.haskell.org/package/sdl2)
 and [cairo bindings](https://hackage.haskell.org/package/cairo).
 
 Just clone and install this repository:
@@ -15,7 +15,7 @@ cd sdl2-cairo
 cabal install
 ```
 
-It has been tested with GHC 7.10.1 on a Linux system without any problems.
+It should work with recent GHC versions (>= 7.8.4) without problems under Linux und OS X.
 
 ##### Documentation
 
