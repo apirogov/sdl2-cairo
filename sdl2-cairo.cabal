@@ -2,7 +2,7 @@
 -- documentation, see http://haskell.org/cabal/users-guide/
 
 name:                sdl2-cairo
-version:             0.1.0.3
+version:             0.1.1.0
 synopsis:            Render with Cairo on SDL textures. Includes optional convenience drawing API.
 description:         This small library provides convenience functions to draw
                      on SDL2 textures with Cairo. As Cairo is complicated, it also

@@ -92,28 +92,30 @@ import Graphics.Rendering.Cairo (Render,LineJoin(..),LineCap(..),Format(..),Oper
 
 import SDL.Cairo (withCairoTexture')
 
+-- | For values from 0 to 255
 type Byte = Word8
 
 -- | RGBA Color is just a byte vector. Colors can be added, subtracted, etc.
 type Color = V4 Byte
 
-data CanvasState = CanvasState{ csSize :: V2 Double, -- ^texture size
-                                csSurface :: C.Surface, -- ^Cairo surface
-                                csFG :: Maybe Color, -- ^stroke color
-                                csBG :: Maybe Color, -- ^fill color
-                                csImages :: [Image] -- ^keeping track of images to free later
+data CanvasState = CanvasState{ csSize :: V2 Double,    -- ^ texture size
+                                csSurface :: C.Surface, -- ^ Cairo surface
+                                csFG :: Maybe Color,    -- ^ stroke color
+                                csBG :: Maybe Color,    -- ^ fill color
+                                csImages :: [Image]     -- ^ keep track of images to free later
                               }
 
--- |get size of the canvas (Processing: @width(), height()@)
+-- | get size of the canvas (Processing: @width(), height()@)
 getCanvasSize :: Canvas (V2 Double)
 getCanvasSize = gets csSize
 
--- |wrapper around the Cairo 'Render' monad, providing a Processing-style API
 newtype RenderWrapper m a = Canvas { unCanvas :: StateT CanvasState m a }
   deriving (Functor, Applicative, Monad, MonadTrans, MonadIO, MonadState CanvasState)
+
+-- | wrapper around the Cairo 'Render' monad, providing a Processing-style API
 type Canvas = RenderWrapper Render
 
--- |draw on a SDL texture using the 'Canvas' monad
+-- | draw on a SDL texture using the 'Canvas' monad
 withCanvas :: Texture -> Canvas a -> IO a
 withCanvas t c = withCairoTexture' t $ \s -> do
   (TextureInfo _ _ w h) <- queryTexture t
@@ -130,46 +132,46 @@ withCanvas t c = withCairoTexture' t $ \s -> do
 
 ----
 
--- |set current stroke color
+-- | set current stroke color
 stroke :: Color -> Canvas ()
-stroke clr = modify (\cs -> cs{csFG=Just clr})
--- |set current fill color
+stroke clr = modify $ \cs -> cs{csFG=Just clr}
+-- | set current fill color
 fill :: Color -> Canvas ()
-fill clr = modify (\cs -> cs{csBG=Just clr})
--- |disable stroke (-> shapes without borders!), reenabled by using 'stroke'
+fill clr   = modify $ \cs -> cs{csBG=Just clr}
+-- | disable stroke (-> shapes without borders!), reenabled by using 'stroke'
 noStroke :: Canvas ()
-noStroke = modify (\cs -> cs{csFG=Nothing})
--- |disable fill (-> shapes are not filled!), reenabled by using 'fill'
+noStroke   = modify $ \cs -> cs{csFG=Nothing}
+-- | disable fill (-> shapes are not filled!), reenabled by using 'fill'
 noFill :: Canvas ()
-noFill = modify (\cs -> cs{csBG=Nothing})
+noFill     = modify $ \cs -> cs{csBG=Nothing}
 
--- |create opaque gray color
+-- | create opaque gray color
 gray :: Byte -> Color
 gray c = V4 c c c 255
--- |create opaque red color
+-- | create opaque red color
 red :: Byte -> Color
 red c = V4 c 0 0 255
--- |create opaque green color
+-- | create opaque green color
 green :: Byte -> Color
 green c = V4 0 c 0 255
--- |create opaque blue color
+-- | create opaque blue color
 blue :: Byte -> Color
 blue c = V4 0 0 c 255
--- |create opaque mixed color
+-- | create opaque mixed color
 rgb :: Byte -> Byte -> Byte -> Color
 rgb r g b = V4 r g b 255
--- |set transparency of color (half red would be: @red 255 !\@ 128@)
+-- | set transparency of color (half red would be: @red 255 !\@ 128@)
 (!@) :: Color -> Byte -> Color
 (V4 r g b _) !@ a = V4 r g b a
 
--- |set line width for shape borders etc.
+-- | set line width for shape borders etc.
 strokeWeight :: Double -> Canvas ()
 strokeWeight d = lift $ C.setLineWidth d
 
--- |set the style of connections between lines of shapes
+-- | set the style of connections between lines of shapes
 strokeJoin :: C.LineJoin -> Canvas ()
 strokeJoin l = lift $ C.setLineJoin l
--- |set the style of the line caps
+-- | set the style of the line caps
 strokeCap :: C.LineCap -> Canvas ()
 strokeCap l = lift $ C.setLineCap l
 
@@ -178,12 +180,14 @@ strokeCap l = lift $ C.setLineCap l
 -- | position (canonically, top-left corner) and size representation (X Y W H)
 data Dim = D Double Double Double Double deriving (Show,Eq)
 
--- | type indicating where the position coordinate is referring to
+-- | indicates where a position coordinate is located in a rectangle
 data Anchor = NW | N | NE | E | SE | S | SW | W | Center | Baseline deriving (Show,Eq)
 
 -- | create dimensions from position and size vector
 toD (V2 a b) (V2 c d) = D a b c d
+-- | get position vector from dimensions
 dimPos  (D a b _ _) = V2 a b
+-- | get size vector from dimensions
 dimSize (D _ _ c d) = V2 c d
 
 -- | takes dimensions with bottom-right corner instead of size, returns normalized (with size)
@@ -192,8 +196,8 @@ corners (D xl yl xh yh) = D xl yl (xh-xl) (yh-yl)
 -- | takes dimensions with centered position, returns normalized (top-left corner)
 centered = aligned Center
 
--- | given dimensions with position coordinate not referring to the top-left corner,
--- normalize to top-left corner coordinate
+-- | takes dimensions with non-standard position coordinate,
+-- returns dimensions normalized to top-left corner coordinate
 aligned :: Anchor -> Dim -> Dim
 aligned NW dim = dim
 aligned NE (D x y w h) = D (x-w) y      w h
@@ -208,66 +212,66 @@ aligned Center (D x y w h) = D (x-w/2) (y-h/2) w h
 
 ----
 
--- |replace current matrix with identity
+-- | replace current matrix with identity
 resetMatrix :: Canvas ()
-resetMatrix = lift $ C.identityMatrix
+resetMatrix = lift C.identityMatrix
 
--- |push current matrix onto the stack
+-- | push current matrix onto the stack
 pushMatrix :: Canvas ()
-pushMatrix = lift $ C.save
+pushMatrix = lift C.save
 
--- |pop a matrix
+-- | pop a matrix
 popMatrix :: Canvas ()
-popMatrix = lift $ C.restore
+popMatrix = lift C.restore
 
--- |translate coordinate system
+-- | translate coordinate system
 translate :: V2 Double -> Canvas ()
 translate (V2 x y) = lift $ C.translate x y
 
--- |scale coordinate system
+-- | scale coordinate system
 scale :: V2 Double -> Canvas ()
 scale (V2 x y) = lift $ C.scale x y
 
--- |rotate coordinate system
+-- | rotate coordinate system
 rotate :: Double -> Canvas ()
 rotate a = lift $ C.rotate a
 
 ----
 
--- |clear the canvas with given color
+-- | clear the canvas with given color
 background :: Color -> Canvas ()
 background c = do
   (V2 w h) <- gets csSize
   lift $ setColor c >> C.rectangle 0 0 w h >> C.fill
 
--- |draw a point with stroke color (cairo emulates this with 1x1 rects!)
+-- | draw a point with stroke color (cairo emulates this with 1x1 rects!)
 point :: V2 Double -> Canvas ()
 point (V2 x y) = ifColor csFG $ \c -> do
-      C.rectangle x y 1 1
-      setColor c
-      C.fill
+  C.rectangle x y 1 1
+  setColor c
+  C.fill
 
--- |draw a line between two points with stroke color
+-- | draw a line between two points with stroke color
 line :: V2 Double -> V2 Double -> Canvas ()
 line (V2 x1 y1) (V2 x2 y2) = ifColor csFG $ \c -> do
-      C.moveTo x1 y1
-      C.lineTo x2 y2
-      setColor c
-      C.stroke
+  C.moveTo x1 y1
+  C.lineTo x2 y2
+  setColor c
+  C.stroke
 
--- |draw a triangle connecting three points
+-- | draw a triangle connecting three points
 triangle :: V2 Double -> V2 Double -> V2 Double -> Canvas ()
 triangle (V2 x1 y1) (V2 x2 y2) (V2 x3 y3) = drawShape $ do
-    C.moveTo x1 y1
-    C.lineTo x2 y2
-    C.lineTo x3 y3
-    C.lineTo x1 y1
+  C.moveTo x1 y1
+  C.lineTo x2 y2
+  C.lineTo x3 y3
+  C.lineTo x1 y1
 
--- |draw a rectangle
+-- | draw a rectangle
 rect :: Dim -> Canvas ()
 rect (D x y w h) = drawShape $ C.rectangle x y w h
 
--- |draw a polygon connecting given points (equivalent to @'shape' ('ShapeRegular' True)@)
+-- | draw a polygon connecting given points (equivalent to @'shape' ('ShapeRegular' True)@)
 polygon :: [V2 Double] -> Canvas ()
 polygon = shape (ShapeRegular True)
 
@@ -280,7 +284,7 @@ data ShapeMode = ShapeRegular Bool  -- ^regular path. flag decides whether the f
                | ShapeTriangleFan -- ^fix first point, draw triangles with every neighboring pair and first point
                deriving (Show,Eq)
 
--- |draw shape along a given path using given @'ShapeMode'@.
+-- | draw shape along a given path using given @'ShapeMode'@.
 -- (Processing: @beginShape(),vertex(),endShape()@)
 shape :: ShapeMode -> [V2 Double] -> Canvas ()
 shape (ShapeRegular closed) ((V2 x y):ps) = drawShape $ do
@@ -308,7 +312,7 @@ shape ShapeTriangleFan _ = return ()
 
 ----
 
--- |draw arc: @arc dimensions startAngle endAngle@
+-- | draw arc: @arc dimensions startAngle endAngle@
 arc :: Dim -> Double -> Double -> Canvas ()
 arc (D x y w h) sa ea = drawShape $ do
   C.save
@@ -317,25 +321,25 @@ arc (D x y w h) sa ea = drawShape $ do
   C.arc 0 0 1 sa ea
   C.restore
 
--- |draw ellipse
+-- | draw ellipse
 ellipse :: Dim -> Canvas ()
 ellipse dim = arc dim 0 (2*pi)
 
--- |draw circle: @circle leftCorner diameter@
+-- | draw circle: @circle leftCorner diameter@
 circle :: V2 Double -> Double -> Canvas ()
 circle (V2 x y) d = ellipse (D x y d d)
 
--- |draw circle: @circle centerPoint diameter@
+-- | draw circle: @circle centerPoint diameter@
 circle' :: V2 Double -> Double -> Canvas ()
 circle' (V2 x y) d = ellipse $ centered (D x y d d)
 
--- |draw cubic bezier spline: @bezier fstAnchor fstControl sndControl sndAnchor@
+-- | draw cubic bezier spline: @bezier fstAnchor fstControl sndControl sndAnchor@
 bezier :: V2 Double -> V2 Double -> V2 Double -> V2 Double -> Canvas ()
 bezier (V2 x1 y1) (V2 x2 y2) (V2 x3 y3) (V2 x4 y4) = drawShape $ do
   C.moveTo x1 y1
   C.curveTo x2 y2 x3 y3 x4 y4
 
--- |draw quadratic bezier spline: @bezier fstAnchor control sndAnchor@
+-- | draw quadratic bezier spline: @bezier fstAnchor control sndAnchor@
 bezierQ :: V2 Double -> V2 Double -> V2 Double -> Canvas ()
 bezierQ p0 p12 p3 = bezier p0 p1 p2 p3
   where p1 = p0 + 2/3*(p12-p0)
@@ -343,34 +347,34 @@ bezierQ p0 p12 p3 = bezier p0 p1 p2 p3
 
 ----
 
--- |map a value from one range onto another
+-- | map a value from one range onto another
 mapRange :: Double -> (Double,Double) -> (Double,Double) -> Double
 mapRange v (l1,r1) (l2,r2) = (v-l1)*fac + l2
   where fac = (r2-l2)/(r1-l1)
 
--- |convert degrees to radians
+-- | convert degrees to radians
 radians :: Double -> Double
 radians d = d*pi/180
--- |convert radians to degrees
+-- | convert radians to degrees
 degrees :: Double -> Double
 degrees r = r/pi*180
--- |force value v into given range
+-- | force value v into given range
 constrain :: Double -> (Double,Double) -> Double
 constrain v (l,h) = max l $ min h v
 
--- |set new random seed
+-- | set new random seed
 randomSeed :: Int -> Canvas ()
 randomSeed s = liftIO $ setStdGen $ mkStdGen s
 
--- |get new random number
+-- | get new random number
 random :: (Random a) => (a,a) -> Canvas a
 random = liftIO . randomRIO
 
--- |date and time as returned by getTime
+-- | date and time as returned by getTime
 data Time = Time { year :: Int, month :: Int, day :: Int
                  , hour :: Int, minute :: Int, second :: Int } deriving (Show,Eq)
 
--- |get current system time. Use the 'Time' accessors for specific components.
+-- | get current system time. Use the 'Time' accessors for specific components.
 -- (Processing: @year(),month(),day(),hour(),minute(),second()@)
 getTime :: IO Time
 getTime = do
@@ -381,6 +385,7 @@ getTime = do
 
 ----
 
+-- | Stores an image surface with additional information
 data Image = Image {imageSurface::C.Surface, imageSize::V2 Int, imageFormat::Format}
 
 -- | create a new empty image of given size
@@ -451,14 +456,15 @@ textSize = return . dimSize . fst <=< textExtents
 
 -- | get information about given text when rendered in current font.
 -- returns tuple with location of top-left corner relative to
--- the origin and size of rendered text in the first component
--- and the cursor advancement relative to origin in the second component.
+-- the origin and size of rendered text in the first component,
+-- cursor advancement relative to origin in the second component
+-- (also see 'Graphics.Rendering.Cairo.TextExtents').
 textExtents :: String -> Canvas (Dim, V2 Double)
 textExtents s = do
   (C.TextExtents xb yb w h xa ya) <- lift $ C.textExtents s
   return ((D xb yb w h),(V2 xa ya))
 
--- | render text. returns cursor advancement
+-- | render text. returns cursor advancement (@text = text' Baseline@)
 text :: String -> V2 Double -> Canvas (V2 Double)
 text = text' Baseline
 
@@ -473,19 +479,19 @@ text' a str pos = do
 
 -- helpers --
 
--- |draw a shape - first fill with bg color, then draw border with stroke color
+-- | draw a shape - first fill with bg color, then draw border with stroke color
 drawShape :: Render a -> Canvas ()
 drawShape m = do
  ifColor csBG $ \c -> m >> setColor c >> C.fill
  ifColor csFG $ \c -> m >> setColor c >> C.stroke
 
--- |if color (csFG/csBG) is set, perform given render block
+-- | if color (csFG/csBG) is set, perform given render block
 ifColor :: (CanvasState -> Maybe Color) -> (Color -> Render a) -> Canvas ()
 ifColor cf m = get >>= \cs -> case cf cs of
                                 Just c -> lift (m c) >> return ()
                                 Nothing -> return ()
 
--- |convert from 256-value RGBA to Double representation, set color
+-- | convert from 256-value RGBA to Double representation, set color
 setColor :: Color -> Render ()
 setColor (V4 r g b a) = C.setSourceRGBA (conv r) (conv g) (conv b) (conv a)
   where conv = ((1.0/256)*).fromIntegral
@@ -544,6 +550,6 @@ copyFromToSurface op src sdim@(D sx sy sw sh) dest (D x y w h) = do
 setFont :: Font -> Render ()
 setFont (Font face sz bold italic) = do
   C.selectFontFace face
-                   (if italic then C.FontSlantItalic else C.FontSlantNormal)
-                   (if bold then C.FontWeightBold else C.FontWeightNormal)
+    (if italic then C.FontSlantItalic else C.FontSlantNormal )
+    (if bold   then C.FontWeightBold  else C.FontWeightNormal)
   C.setFontSize sz

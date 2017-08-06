@@ -12,7 +12,7 @@ Just clone and install this repository:
 ```bash
 git clone git@github.com:apirogov/sdl2-cairo.git
 cd sdl2-cairo
-cabal install
+stack install
 ```
 
 It should work with recent GHC versions (>= 7.8.4) without problems under Linux und OS X.
@@ -71,5 +71,6 @@ import Diagrams.Backend.Cairo
 
 See also the source of Main.hs for more examples. You start that demo with:
 ```bash
-cabal run
+stack install --flag sdl2-cairo:builddemo
+stack exec sdl2-cairo-test
 ```
