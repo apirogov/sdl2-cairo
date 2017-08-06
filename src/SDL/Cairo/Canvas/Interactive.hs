@@ -7,7 +7,7 @@ Maintainer  : anton.pirogov@gmail.com
 
 This module provides convenience functions for interactive development with ghci.
 -}
-module SDL.Cairo.Canvas.Interactive where
+module SDL.Cairo.Canvas.Interactive (getInteractive) where
 
 import Control.Monad (forever)
 import Control.Concurrent (forkIO)

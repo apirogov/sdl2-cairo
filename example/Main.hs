@@ -20,6 +20,12 @@ main = do
 
   appLoop renderer texture 0 (V2 0 0)
 
+  -- clean up
+  destroyTexture texture
+  destroyRenderer renderer
+  destroyWindow window
+  return ()
+
 appLoop :: Renderer -> Texture -> Int -> V2 Double -> IO ()
 appLoop renderer texture framecount mousepos = do
   events <- pollEvents

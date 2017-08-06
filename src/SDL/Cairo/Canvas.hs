@@ -47,12 +47,12 @@ main = do
 -}
 module SDL.Cairo.Canvas (
   -- * Entry point
-  Canvas, withCanvas, getCanvasSize, renderCairo,
+  Canvas, withCanvas, getCanvasSize,
   -- * Color and Style
   Color, Byte, gray, red, green, blue, rgb, (!@),
   stroke, fill, noStroke, noFill, strokeWeight, strokeJoin, strokeCap,
   -- * Coordinates
-  Dim(..), toD, Anchor(..), aligned, centered, corners,
+  Dim(..), toD, dimPos, dimSize, Anchor(..), aligned, centered, corners,
   -- * Primitives
   background, point, line, triangle, rect, polygon, shape, ShapeMode(..),
   -- * Arcs and Curves
@@ -62,19 +62,18 @@ module SDL.Cairo.Canvas (
   -- * Images
   Image(imageSize), createImage, loadImagePNG, saveImagePNG, image, image', blend, grab,
   -- * Text
-  Font(..), textFont, textSize, text, text',
+  Font(..), textFont, textSize, textExtents, text, text',
   -- * Math
   mapRange, radians, degrees,
   -- * Misc
   randomSeed, random, getTime, Time(..),
-  module Graphics.Rendering.Cairo
+  LineCap(..), LineJoin(..)
 ) where
 
 #if __GLASGOW_HASKELL__ < 710
 import Control.Applicative
 #endif
 
-import Data.Monoid
 import Control.Monad.State
 import Data.Word (Word8)
 
@@ -102,8 +101,6 @@ data CanvasState = CanvasState{ csSize :: V2 Double, -- ^texture size
                                 csSurface :: C.Surface, -- ^Cairo surface
                                 csFG :: Maybe Color, -- ^stroke color
                                 csBG :: Maybe Color, -- ^fill color
-                                csFont :: Font,      -- ^current font
-                                csActions :: Endo [Render ()], -- ^list of actions to perform
                                 csImages :: [Image] -- ^keeping track of images to free later
                               }
 
@@ -112,48 +109,39 @@ getCanvasSize :: Canvas (V2 Double)
 getCanvasSize = gets csSize
 
 -- |wrapper around the Cairo 'Render' monad, providing a Processing-style API
-newtype Canvas a = Canvas { unCanvas :: StateT CanvasState IO a }
-  deriving (Functor, Applicative, Monad, MonadIO, MonadState CanvasState)
-
--- instance Monad Canvas where
---   f >>= g = undefined
---     --TODO
+newtype RenderWrapper m a = Canvas { unCanvas :: StateT CanvasState m a }
+  deriving (Functor, Applicative, Monad, MonadTrans, MonadIO, MonadState CanvasState)
+type Canvas = RenderWrapper Render
 
 -- |draw on a SDL texture using the 'Canvas' monad
 withCanvas :: Texture -> Canvas a -> IO a
 withCanvas t c = withCairoTexture' t $ \s -> do
   (TextureInfo _ _ w h) <- queryTexture t
-  (ret, result) <- runStateT (unCanvas $ defaults >> c)
-                 CanvasState{ csSize = V2 (fromIntegral w) (fromIntegral h)
-                            , csSurface = s
-                            , csFG = Just $ gray 0
-                            , csBG = Just $ gray 255
-                            , csFont = Font "" 10 False False
-                            , csActions = mempty
-                            , csImages = []
-                            }
-  let render = appEndo (csActions result) []
-  C.renderWith s $ sequence_ render
+  let defaults  = strokeWeight 1 >> strokeCap C.LineCapRound
+      initstate = CanvasState{ csSize = V2 (fromIntegral w) (fromIntegral h)
+                             , csSurface = s
+                             , csFG = Just $ gray 0
+                             , csBG = Just $ gray 255
+                             , csImages = []
+                             }
+  (ret, result) <- C.renderWith s $ runStateT (unCanvas $ defaults >> c) initstate
   forM_ (csImages result) $ \(Image s _ _) -> C.surfaceFinish s
   return ret
-  where defaults = do
-          strokeWeight 1
-          strokeCap C.LineCapRound
 
 ----
 
 -- |set current stroke color
 stroke :: Color -> Canvas ()
-stroke clr = get >>= \cs -> put cs{csFG=Just clr}
+stroke clr = modify (\cs -> cs{csFG=Just clr})
 -- |set current fill color
 fill :: Color -> Canvas ()
-fill clr = get >>= \cs -> put cs{csBG=Just clr}
+fill clr = modify (\cs -> cs{csBG=Just clr})
 -- |disable stroke (-> shapes without borders!), reenabled by using 'stroke'
 noStroke :: Canvas ()
-noStroke = get >>= \cs -> put cs{csFG=Nothing}
+noStroke = modify (\cs -> cs{csFG=Nothing})
 -- |disable fill (-> shapes are not filled!), reenabled by using 'fill'
 noFill :: Canvas ()
-noFill = get >>= \cs -> put cs{csBG=Nothing}
+noFill = modify (\cs -> cs{csBG=Nothing})
 
 -- |create opaque gray color
 gray :: Byte -> Color
@@ -176,14 +164,14 @@ rgb r g b = V4 r g b 255
 
 -- |set line width for shape borders etc.
 strokeWeight :: Double -> Canvas ()
-strokeWeight d = renderCairo $ C.setLineWidth d
+strokeWeight d = lift $ C.setLineWidth d
 
 -- |set the style of connections between lines of shapes
 strokeJoin :: C.LineJoin -> Canvas ()
-strokeJoin l = renderCairo $ C.setLineJoin l
+strokeJoin l = lift $ C.setLineJoin l
 -- |set the style of the line caps
 strokeCap :: C.LineCap -> Canvas ()
-strokeCap l = renderCairo $ C.setLineCap l
+strokeCap l = lift $ C.setLineCap l
 
 ----
 
@@ -195,6 +183,14 @@ data Anchor = NW | N | NE | E | SE | S | SW | W | Center | Baseline deriving (Sh
 
 -- | create dimensions from position and size vector
 toD (V2 a b) (V2 c d) = D a b c d
+dimPos  (D a b _ _) = V2 a b
+dimSize (D _ _ c d) = V2 c d
+
+-- | takes dimensions with bottom-right corner instead of size, returns normalized (with size)
+corners (D xl yl xh yh) = D xl yl (xh-xl) (yh-yl)
+
+-- | takes dimensions with centered position, returns normalized (top-left corner)
+centered = aligned Center
 
 -- | given dimensions with position coordinate not referring to the top-left corner,
 -- normalize to top-left corner coordinate
@@ -210,37 +206,31 @@ aligned S (D x y w h) = D (x-w/2) (y-h)   w h
 aligned E (D x y w h) = D (x-w)   (y-h/2) w h
 aligned Center (D x y w h) = D (x-w/2) (y-h/2) w h
 
--- | takes dimensions with centered position, returns normalized (left corner)
-centered = aligned Center
-
--- | takes dimensions with bottom-right corner instead of size, returns normalized (with size)
-corners (D xl yl xh yh) = D xl yl (xh-xl) (yh-yl)
-
 ----
 
 -- |replace current matrix with identity
 resetMatrix :: Canvas ()
-resetMatrix = renderCairo $ C.identityMatrix
+resetMatrix = lift $ C.identityMatrix
 
 -- |push current matrix onto the stack
 pushMatrix :: Canvas ()
-pushMatrix = renderCairo $ C.save
+pushMatrix = lift $ C.save
 
 -- |pop a matrix
 popMatrix :: Canvas ()
-popMatrix = renderCairo $ C.restore
+popMatrix = lift $ C.restore
 
 -- |translate coordinate system
 translate :: V2 Double -> Canvas ()
-translate (V2 x y) = renderCairo $ C.translate x y
+translate (V2 x y) = lift $ C.translate x y
 
 -- |scale coordinate system
 scale :: V2 Double -> Canvas ()
-scale (V2 x y) = renderCairo $ C.scale x y
+scale (V2 x y) = lift $ C.scale x y
 
 -- |rotate coordinate system
 rotate :: Double -> Canvas ()
-rotate a = renderCairo $ C.rotate a
+rotate a = lift $ C.rotate a
 
 ----
 
@@ -248,7 +238,7 @@ rotate a = renderCairo $ C.rotate a
 background :: Color -> Canvas ()
 background c = do
   (V2 w h) <- gets csSize
-  renderCairo $ setColor c >> C.rectangle 0 0 w h >> C.fill
+  lift $ setColor c >> C.rectangle 0 0 w h >> C.fill
 
 -- |draw a point with stroke color (cairo emulates this with 1x1 rects!)
 point :: V2 Double -> Canvas ()
@@ -415,7 +405,7 @@ loadImagePNG path = do
 
 -- | Save an image as PNG to given file path
 saveImagePNG :: Image -> FilePath -> Canvas ()
-saveImagePNG (Image s _ _) fp = renderCairo $ liftIO (C.surfaceWriteToPNG s fp)
+saveImagePNG (Image s _ _) fp = liftIO (C.surfaceWriteToPNG s fp)
 
 -- | Render complete image on given coordinates
 image :: Image -> V2 Double -> Canvas ()
@@ -433,14 +423,14 @@ image' img@(Image _ (V2 ow oh) _) =
 blend :: Operator -> Image -> Dim -> Dim -> Canvas ()
 blend op (Image s _ _) sdim ddim = do
   surf <- gets csSurface
-  renderCairo $ copyFromToSurface op s sdim surf ddim
+  lift $ copyFromToSurface op s sdim surf ddim
 
 -- | get a copy of the image from current window (Processing: @get()@)
 grab :: Dim -> Canvas Image
 grab dim@(D _ _ w h) = do
   surf <- gets csSurface
   i@(Image s _ _) <- createImage (V2 (round w) (round h))
-  renderCairo $ copyFromToSurface OperatorSource surf dim s (D 0 0 w h)
+  lift $ copyFromToSurface OperatorSource surf dim s (D 0 0 w h)
   return i
 
 ----
@@ -453,40 +443,35 @@ data Font = Font{fontFace::String
 
 -- | set current font for text rendering
 textFont :: Font -> Canvas ()
-textFont f = do
-  get >>= \cs -> put cs{csFont=f}
-  renderCairo $ setFont f
+textFont f = lift $ setFont f
 
 -- | get the size of the text when rendered in current font
 textSize :: String -> Canvas (V2 Double)
-textSize s = gets csSurface >>= \cs -> do
-  font <- gets csFont
-  (C.TextExtents _ _ w h _ _) <- C.renderWith cs $ setFont font >> C.textExtents s
-  return $ V2 w h
+textSize = return . dimSize . fst <=< textExtents
 
--- | render text left-aligned (coordinate is top-left corner)
-text :: String -> V2 Double -> Canvas ()
-text str (V2 x y) = ifColor csFG $ \_ -> do
-  (C.TextExtents _ yb _ _ _ _) <- C.textExtents str
-  -- setColor c
-  C.moveTo x (y-yb)
-  C.showText str
+-- | get information about given text when rendered in current font.
+-- returns tuple with location of top-left corner relative to
+-- the origin and size of rendered text in the first component
+-- and the cursor advancement relative to origin in the second component.
+textExtents :: String -> Canvas (Dim, V2 Double)
+textExtents s = do
+  (C.TextExtents xb yb w h xa ya) <- lift $ C.textExtents s
+  return ((D xb yb w h),(V2 xa ya))
 
--- | render text with specified alignment. returns x and y advancement
-text' :: String -> Anchor -> V2 Double -> Canvas () --(V2 Double)
-text' str a pos = ifColor csFG $ \_ -> do
-  (C.TextExtents xb yb w h xa ya) <- C.textExtents str
-  let (D x' y' _ _) = aligned a $ toD pos $ V2 w h
-  -- setColor c
-  C.moveTo x' y'
-  C.showText str
-  -- return $ V2 xa ya
+-- | render text. returns cursor advancement
+text :: String -> V2 Double -> Canvas (V2 Double)
+text = text' Baseline
+
+-- | render text with specified alignment. returns cursor advancement
+text' :: Anchor -> String -> V2 Double -> Canvas (V2 Double)
+text' a str pos = do
+  (C.TextExtents xb yb w h xa ya) <- lift $ C.textExtents str
+  let (D xn yn _ _) = (if a==Baseline then id else aligned a) $ toD pos $ V2 w h
+      (V2 x' y') = (V2 xn yn) - if a/=Baseline then (V2 xb yb) else 0
+  ifColor csFG $ \c -> C.moveTo x' y' >> setColor c >> C.showText str
+  return $ V2 xa ya
 
 -- helpers --
-
--- | execute a raw Cairo Render action
-renderCairo :: Render () -> Canvas ()
-renderCairo m = get >>= \cs -> put cs{csActions = csActions cs <> Endo ([m]++)}
 
 -- |draw a shape - first fill with bg color, then draw border with stroke color
 drawShape :: Render a -> Canvas ()
@@ -495,9 +480,9 @@ drawShape m = do
  ifColor csFG $ \c -> m >> setColor c >> C.stroke
 
 -- |if color (csFG/csBG) is set, perform given render block
-ifColor :: (CanvasState -> Maybe Color) -> (Color -> Render ()) -> Canvas ()
+ifColor :: (CanvasState -> Maybe Color) -> (Color -> Render a) -> Canvas ()
 ifColor cf m = get >>= \cs -> case cf cs of
-                                Just c -> renderCairo (m c)
+                                Just c -> lift (m c) >> return ()
                                 Nothing -> return ()
 
 -- |convert from 256-value RGBA to Double representation, set color
@@ -507,7 +492,7 @@ setColor (V4 r g b a) = C.setSourceRGBA (conv r) (conv g) (conv b) (conv a)
 
 -- | Add to garbage collection list
 track :: Image -> Canvas ()
-track img = get >>= \cs -> put cs{csImages=img:csImages cs}
+track img = modify $ \cs -> cs{csImages=img:csImages cs}
 
 -- cairo helpers --
 
