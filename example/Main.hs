@@ -1,6 +1,7 @@
 {-# LANGUAGE OverloadedStrings #-}
 module Main where
 import Control.Monad (unless)
+import Control.Monad.State (lift)
 
 import SDL hiding (point, rotate)
 import Linear.V2 (V2(..))
@@ -8,6 +9,7 @@ import Linear.Affine (Point(..))
 
 import SDL.Cairo
 import SDL.Cairo.Canvas
+import qualified Graphics.Rendering.Cairo as C
 
 main :: IO ()
 main = do
@@ -57,7 +59,7 @@ appLoop renderer texture framecount mousepos = do
 
   unless quit (appLoop renderer texture (framecount+1) mousepos')
 
--- draw a circle in a random color
+-- | draw a circle in a random color
 drawRndCircle :: Canvas ()
 drawRndCircle = do
     rnd <- random (0,255)
@@ -65,7 +67,7 @@ drawRndCircle = do
     circle (V2 700 500) 100
     fill $ gray 255
 
--- some shapes, show some features
+-- | some shapes, show some features
 drawExample :: Canvas ()
 drawExample = do
     background $ gray 102
@@ -80,28 +82,43 @@ drawExample = do
     rect $ D 200 200 100 100
     stroke $ green 255 !@ 128
     fill $ blue 255 !@ 128
-    rect $ D 250 250 100 100
-    triangle (V2 400 300) (V2 350 400) (V2 400 400)
+    rect $ centered $ D 200 200 100 100
+    triangle (V2 700 300) (V2 750 400) (V2 700 400)
 
     strokeWeight 5
     strokeJoin LineJoinRound
     stroke $ (blue 255 + red 255) !@ 128
     fill $ rgb 0 255 255 !@ 128
-    polygon [V2 500 500,V2 510 505,V2 520 530, V2 500 530]
+    polygon [V2 600 500,V2 610 505,V2 620 530, V2 600 530]
 
     circle (V2 200 500) 30
 
     strokeWeight 1
-    ellipse $ D 300 500 30 50
+    ellipse $ D 100 500 30 50
 
     pushMatrix
-    translate $ V2 600 500
+    translate $ V2 350 350
     rotate $ pi/4
     ellipse $ D 0 0 100 50
     popMatrix
     ellipse $ D 0 0 100 50
 
--- ported star example from Processing home page
+    -- render some text
+    let txtpos = V2 100 50
+    textFont $ Font "Monospace" 30 False True
+    offset <- text "sdl2-cairo " txtpos
+    textFont $ Font "" 30 True False
+    text "is AWESOME." $ txtpos + offset
+    return ()
+
+    -- use Cairo Render API directly
+    lift $ do
+      C.setSourceRGB 1 1 0
+      C.moveTo 100 300
+      C.lineTo 200 400
+      C.stroke
+
+-- | ported star example from Processing home page
 drawStars :: Double -> Canvas ()
 drawStars frameCount = do
   (V2 w h) <- getCanvasSize
@@ -135,7 +152,7 @@ star x y r1 r2 n = do
                $ iterate (\(a, _) -> (a+angle,[p1 a, p2 a])) (0,[])
   polygon vertices
 
--- ported triangle strip example from Processing homepage
+-- | ported triangle strip example from Processing homepage
 drawTriangleStrip :: V2 Double -> Canvas ()
 drawTriangleStrip mousePos = do
   (V2 w h) <- getCanvasSize
@@ -153,7 +170,7 @@ drawTriangleStrip mousePos = do
   shape ShapeTriangleStrip vertices
   return ()
 
--- draw bezier curve examples
+-- | draw bezier curve examples
 drawBezierTest :: Canvas ()
 drawBezierTest = do
   pushMatrix
